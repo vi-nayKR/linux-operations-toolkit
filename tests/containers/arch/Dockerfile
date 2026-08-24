@@ -1,4 +1,4 @@
-FROM archlinux:base@sha256:e5bfcd41ddf6190dc3fdafe0d2979b039a82f006b1666a3d207e80c9e70a00d9
+FROM archlinux:base@sha256:4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
 
 ENV container=docker
 
