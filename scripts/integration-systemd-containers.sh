@@ -56,6 +56,7 @@ start_node() {
     --hostname "$hostname" \
     --label io.github.vi-naykr.linux-operations-toolkit=integration-test \
     --privileged \
+    --cgroupns=host \
     --tmpfs /run \
     --tmpfs /run/lock \
     --tmpfs /tmp \
@@ -76,7 +77,11 @@ wait_for_systemd() {
     fi
     sleep 1
   done
-  docker logs "$container" >&2
+  docker container inspect --format 'state={{ .State.Status }} exit={{ .State.ExitCode }} error={{ .State.Error }}' "$container" >&2
+  docker logs "$container" >&2 || true
+  docker exec "$container" ps -ef >&2 || true
+  docker exec "$container" systemctl --failed --no-pager >&2 || true
+  docker exec "$container" journalctl --boot --no-pager --lines=100 >&2 || true
   printf 'systemd did not become usable in %s\n' "$container" >&2
   exit 1
 }
