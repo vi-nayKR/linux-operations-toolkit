@@ -125,15 +125,6 @@ ssh-keyscan -H -p "$arch_port" 127.0.0.1 2>/dev/null | tee -a "$known_hosts" >/d
 } > "$inventory"
 
 export ANSIBLE_NOCOLOR=1
-ansible-playbook --inventory "$inventory" "$repo_root/tests/integration.yml" |
-  tee "$evidence_directory/converge-first.log"
-ansible-playbook --inventory "$inventory" "$repo_root/tests/integration.yml" |
-  tee "$evidence_directory/converge-second.log"
-
-if [[ "$(grep -Ec 'changed=0 +unreachable=0 +failed=0' "$evidence_directory/converge-second.log")" -ne 2 ]]; then
-  printf 'second convergence was not idempotent on both nodes\n' >&2
-  exit 1
-fi
 
 ssh_node() {
   local port="$1"
@@ -143,6 +134,30 @@ ssh_node() {
     -o UserKnownHostsFile="$known_hosts" -o StrictHostKeyChecking=yes \
     "$bootstrap_user"@127.0.0.1 sudo -- "$@"
 }
+
+ansible-playbook --inventory "$inventory" "$repo_root/tests/integration.yml" |
+  tee "$evidence_directory/converge-first.log"
+ansible-playbook --inventory "$inventory" "$repo_root/tests/integration.yml" |
+  tee "$evidence_directory/converge-second.log"
+
+if [[ "$(grep -Ec 'changed=0 +unreachable=0 +failed=0' "$evidence_directory/converge-second.log")" -ne 2 ]]; then
+  for node_and_port in "debian:$debian_port" "arch:$arch_port"; do
+    node_name="${node_and_port%%:*}"
+    node_port="${node_and_port##*:}"
+    {
+      printf 'node=%s\n' "$node_name"
+      ssh_node "$node_port" systemctl show \
+        --property=Id,LoadState,ActiveState,SubState,UnitFileState,Result,ExecMainCode,ExecMainStatus \
+        nftables.service systemd-timesyncd.service
+      ssh_node "$node_port" systemctl status --no-pager \
+        nftables.service systemd-timesyncd.service || true
+      ssh_node "$node_port" journalctl --no-pager --lines=60 \
+        --unit=nftables.service --unit=systemd-timesyncd.service || true
+    } | tee "$evidence_directory/service-state-${node_name}.log"
+  done
+  printf 'second convergence was not idempotent on both nodes\n' >&2
+  exit 1
+fi
 
 ssh_operator() {
   local port="$1"
