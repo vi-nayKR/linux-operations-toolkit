@@ -189,6 +189,16 @@ verify_sshd_policy() {
   grep -Eiq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
 }
 
+start_verified_backup() {
+  local port="$1"
+  if ssh_node "$port" systemctl start sre-backup.service; then
+    return 0
+  fi
+  ssh_node "$port" systemctl status --no-pager sre-backup.service || true
+  ssh_node "$port" journalctl --no-pager --lines=80 --unit=sre-backup.service || true
+  return 1
+}
+
 verify_node() {
   local node_name="$1"
   local port="$2"
@@ -200,7 +210,7 @@ verify_node() {
     ssh_node "$port" nft list table inet sre_filter | grep 'policy drop'
     ssh_operator "$port" sudo -n true
     verify_sshd_policy "$port"
-    ssh_node "$port" systemctl start sre-backup.service
+    start_verified_backup "$port"
     ssh_node "$port" /usr/local/sbin/sre-backup-freshness
     ssh -i "$private_key" -p "$port" \
       -o BatchMode=yes -o IdentitiesOnly=yes \

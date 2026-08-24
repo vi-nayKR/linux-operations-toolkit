@@ -100,7 +100,7 @@ if ! flock -n 9; then
   exit 75
 fi
 
-node_name="$(hostname | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')"
+node_name="$(uname -n | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')"
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 archive_name="sre-backup-${node_name}-${timestamp}.tar.gz"
 archive_path="$destination_directory/$archive_name"
