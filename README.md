@@ -84,4 +84,4 @@ The role deliberately supports only these two OS families. Unsupported systems f
 
 ## Evidence boundary
 
-CI uploads short-lived raw convergence and drill artifacts. The repository retains the evidence method and a curated record without committing changing runtime output. See [docs/EVIDENCE.md](docs/EVIDENCE.md) and [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+CI uploads short-lived raw convergence and drill artifacts. The repository retains the evidence method and a curated record without committing changing runtime output. The accepted two-node run is recorded in [evidence/README.md](evidence/README.md), and the portability corrections it drove are documented in the [cross-distribution convergence postmortem](postmortems/2026-08-24-cross-distribution-convergence.md). See [docs/EVIDENCE.md](docs/EVIDENCE.md) and [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the evidence and claim boundaries.
