@@ -184,9 +184,9 @@ verify_sshd_policy() {
     printf '%s\n' "$effective_config" | sed -n '1,20p'
     return 1
   fi
-  grep -Eq '^passwordauthentication no$' <<< "$effective_config"
-  grep -Eq '^kbdinteractiveauthentication no$' <<< "$effective_config"
-  grep -Eq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
+  grep -Eiq '^passwordauthentication no$' <<< "$effective_config"
+  grep -Eiq '^kbdinteractiveauthentication no$' <<< "$effective_config"
+  grep -Eiq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
 }
 
 verify_node() {
