@@ -21,6 +21,9 @@
   community.general.pacman:
     update_cache: true
   when: baseline_cache_module == 'pacman'
+  # Repository metadata freshness is an input to convergence, not managed drift.
+  # pacman may report this refresh as changed even when the package set is stable.
+  changed_when: false
 
 - name: Install baseline packages
   ansible.builtin.package:

@@ -18,6 +18,7 @@
 - DNS resolver outage or public PKI incident; the drill uses a reserved name and a local self-signed certificate;
 - memory-pressure behavior outside the tested cgroup v2 environment;
 - package bytes beyond the base image are fetched from live Debian security/update and Arch rolling repositories, so a later run can exercise newer packages even though base manifests and tool versions are pinned;
+- Arch package-index refresh is deliberately excluded from the idempotence change count because pacman can report metadata refresh as changed; installed package state remains enforced and counted;
 - container CI verifies `systemd-timesyncd` enablement but not synchronization: the upstream unit intentionally skips startup when `ConditionVirtualization=!container` is unmet;
 - nftables proof uses service enablement plus the live `inet sre_filter` ruleset because Debian keeps its loader unit active while Arch's successful one-shot unit returns to inactive;
 - unattended upgrades, vulnerability remediation, EDR, auditd, SELinux/AppArmor policy, or centralized identity;
