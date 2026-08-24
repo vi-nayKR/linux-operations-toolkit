@@ -1,0 +1,51 @@
+---
+name: ci
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install pinned dependencies and validation tools
+        run: |
+          python -m pip install --requirement requirements.txt
+          ansible-galaxy collection install --requirement collections/requirements.yml
+          ./scripts/install-ci-tools.sh "$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+
+      - name: Run static and unit validation
+        run: ./scripts/validate.sh
+
+      - name: Converge Debian and Arch, then run drills
+        run: ./scripts/integration-systemd-containers.sh
+
+      - name: Upload convergence and drill evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: linux-operations-evidence
+          path: evidence/runtime/
+          if-no-files-found: warn
+          retention-days: 7

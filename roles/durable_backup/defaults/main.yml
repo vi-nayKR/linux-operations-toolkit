@@ -1,0 +1,8 @@
+---
+backup_source_directory: /srv/sre-backup-source
+backup_destination_directory: /var/backups/sre-toolkit
+backup_metric_directory: "{{ baseline_metric_directory | default('/var/lib/sre-metrics') }}"
+backup_retention_count: 7
+backup_freshness_seconds: 93600
+backup_on_calendar: '*-*-* 02:15:00'
+backup_randomized_delay_seconds: 900

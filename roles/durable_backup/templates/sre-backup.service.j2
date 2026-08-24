@@ -1,0 +1,25 @@
+[Unit]
+Description=Create and verify an atomic local backup
+Documentation=https://github.com/vi-nayKR/linux-operations-toolkit
+ConditionPathIsDirectory={{ backup_source_directory }}
+ConditionPathIsDirectory={{ backup_destination_directory }}
+RequiresMountsFor={{ backup_source_directory }} {{ backup_destination_directory }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sre-backup
+User=root
+Group=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=read-only
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadOnlyPaths={{ backup_source_directory }}
+ReadWritePaths={{ backup_destination_directory }} {{ backup_metric_directory }}

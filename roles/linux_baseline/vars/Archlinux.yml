@@ -1,0 +1,22 @@
+---
+baseline_packages:
+  - bash
+  - ca-certificates
+  - curl
+  - iproute2
+  - jq
+  - lsof
+  - nftables
+  - openssh
+  - openssl
+  - procps-ng
+  - python
+  - rsync
+  - sudo
+  - tar
+  - util-linux
+baseline_cache_module: pacman
+baseline_ssh_service: sshd
+baseline_privileged_group: wheel
+baseline_time_package: ""
+baseline_time_service: systemd-timesyncd

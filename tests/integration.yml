@@ -1,0 +1,23 @@
+---
+- name: Converge disposable Linux nodes over SSH
+  hosts: linux_fleet
+  become: true
+  gather_facts: true
+  vars:
+    baseline_passwordless_sudo: true
+    baseline_users:
+      - name: sre-operator
+        public_keys:
+          - "{{ lookup('ansible.builtin.env', 'SRE_OPERATOR_PUBLIC_KEY') }}"
+  roles:
+    - role: linux_baseline
+    - role: durable_backup
+    - role: safe_diagnostics
+  post_tasks:
+    - name: Install deterministic integration backup payload
+      ansible.builtin.copy:
+        content: "linux-operations-toolkit integration payload\n"
+        dest: /srv/sre-backup-source/integration-payload.txt
+        owner: root
+        group: root
+        mode: '0640'

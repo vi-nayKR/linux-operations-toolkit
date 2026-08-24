@@ -1,0 +1,8 @@
+---
+- name: Install the metadata-only diagnostics collector
+  ansible.builtin.copy:
+    src: sre-diagnostics
+    dest: "{{ diagnostics_install_path }}"
+    owner: root
+    group: root
+    mode: '0755'

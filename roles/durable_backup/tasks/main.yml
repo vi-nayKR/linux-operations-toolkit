@@ -1,0 +1,94 @@
+---
+- name: Validate backup paths and retention
+  ansible.builtin.assert:
+    that:
+      - backup_source_directory is match('^/[^/].*')
+      - backup_destination_directory is match('^/[^/].*')
+      - backup_source_directory != backup_destination_directory
+      - not backup_destination_directory.startswith(backup_source_directory + '/')
+      - backup_retention_count | int >= 2
+      - backup_freshness_seconds | int >= 300
+    fail_msg: Backup paths must be distinct non-root absolute paths with safe bounds.
+
+- name: Create the backup source directory
+  ansible.builtin.file:
+    path: "{{ backup_source_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Create the managed backup destination
+  ansible.builtin.file:
+    path: "{{ backup_destination_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Mark the destination as managed by this role
+  ansible.builtin.copy:
+    content: "managed by linux-operations-toolkit durable_backup role\n"
+    dest: "{{ backup_destination_directory }}/.sre-backup-managed"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Create the backup metric directory
+  ansible.builtin.file:
+    path: "{{ backup_metric_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the durable backup script
+  ansible.builtin.copy:
+    src: sre-backup
+    dest: /usr/local/sbin/sre-backup
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install the backup freshness check
+  ansible.builtin.copy:
+    src: sre-backup-freshness
+    dest: /usr/local/sbin/sre-backup-freshness
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Render the root-owned backup configuration
+  ansible.builtin.template:
+    src: sre-backup.conf.j2
+    dest: /etc/sre-backup.conf
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Install the backup service
+  ansible.builtin.template:
+    src: sre-backup.service.j2
+    dest: /etc/systemd/system/sre-backup.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for durable backup
+
+- name: Install the persistent backup timer
+  ansible.builtin.template:
+    src: sre-backup.timer.j2
+    dest: /etc/systemd/system/sre-backup.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for durable backup
+
+- name: Apply backup unit-file changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the persistent backup timer
+  ansible.builtin.systemd_service:
+    name: sre-backup.timer
+    enabled: true
+    state: started

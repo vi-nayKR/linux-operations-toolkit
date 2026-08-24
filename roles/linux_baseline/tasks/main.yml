@@ -1,0 +1,167 @@
+---
+- name: Reject unsupported operating-system families
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['Debian', 'Archlinux']
+    fail_msg: >-
+      linux_baseline supports Debian and Archlinux families only; detected
+      {{ ansible_os_family }}.
+
+- name: Load distribution-family variables
+  ansible.builtin.include_vars:
+    file: "{{ ansible_os_family }}.yml"
+
+- name: Refresh Debian package metadata
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: baseline_cache_module == 'apt'
+
+- name: Refresh Arch package metadata
+  community.general.pacman:
+    update_cache: true
+  when: baseline_cache_module == 'pacman'
+
+- name: Install baseline packages
+  ansible.builtin.package:
+    name: "{{ baseline_packages + ([baseline_time_package] if baseline_time_package | length > 0 else []) }}"
+    state: present
+
+- name: Create the operations group
+  ansible.builtin.group:
+    name: sre-operators
+    system: true
+    state: present
+
+- name: Create declared operator accounts
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups:
+      - sre-operators
+      - "{{ baseline_privileged_group }}"
+    append: true
+    create_home: true
+    password: "{{ item.password_hash | default(omit) }}"
+    shell: /bin/bash
+    state: present
+    update_password: on_create
+  loop: "{{ baseline_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Create operator SSH directories
+  ansible.builtin.file:
+    path: "/home/{{ item.name }}/.ssh"
+    state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0700'
+  loop: "{{ baseline_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install declared operator public keys
+  ansible.builtin.copy:
+    content: "{{ item.public_keys | default([]) | join('\n') }}\n"
+    dest: "/home/{{ item.name }}/.ssh/authorized_keys"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0600'
+  loop: "{{ baseline_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Allow the operations group to use sudo
+  ansible.builtin.template:
+    src: sre-operators.sudoers.j2
+    dest: /etc/sudoers.d/50-sre-operators
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Ensure the OpenSSH drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the OpenSSH baseline
+  ansible.builtin.copy:
+    src: sshd-baseline.conf
+    dest: /etc/ssh/sshd_config.d/50-sre-baseline.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Validate and reload sshd
+
+- name: Enable and start OpenSSH
+  ansible.builtin.systemd_service:
+    name: "{{ baseline_ssh_service }}"
+    enabled: true
+    state: started
+
+- name: Install the nftables baseline
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: '0600'
+    validate: nft -c -f %s
+  when: baseline_manage_firewall | bool
+  notify: Reload nftables
+
+- name: Enable the nftables service
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started
+  when: baseline_manage_firewall | bool
+
+- name: Enable the time synchronization service
+  ansible.builtin.systemd_service:
+    name: "{{ baseline_time_service }}"
+    enabled: true
+    state: started
+
+- name: Create the Prometheus textfile directory
+  ansible.builtin.file:
+    path: "{{ baseline_metric_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the bounded textfile exporter
+  ansible.builtin.copy:
+    src: sre-textfile-exporter
+    dest: /usr/local/bin/sre-textfile-exporter
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart SRE textfile exporter
+
+- name: Install the textfile exporter unit
+  ansible.builtin.template:
+    src: sre-textfile-exporter.service.j2
+    dest: /etc/systemd/system/sre-textfile-exporter.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart SRE textfile exporter
+
+- name: Apply unit-file changes before enabling the exporter
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the textfile exporter
+  ansible.builtin.systemd_service:
+    name: sre-textfile-exporter.service
+    enabled: true
+    state: started

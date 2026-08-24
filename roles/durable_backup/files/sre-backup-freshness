@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_path="${SRE_BACKUP_CONFIG:-/etc/sre-backup.conf}"
+if [[ ! -f "$config_path" || -L "$config_path" ]]; then
+  printf 'backup config must be a regular, non-symlink file: %s\n' "$config_path" >&2
+  exit 64
+fi
+
+# shellcheck source=/dev/null
+source "$config_path"
+: "${SRE_BACKUP_METRIC_DIRECTORY:?SRE_BACKUP_METRIC_DIRECTORY is required}"
+: "${SRE_BACKUP_FRESHNESS_SECONDS:?SRE_BACKUP_FRESHNESS_SECONDS is required}"
+
+metric_file="$SRE_BACKUP_METRIC_DIRECTORY/sre_backup_success.prom"
+if [[ ! -f "$metric_file" || -L "$metric_file" ]]; then
+  printf 'no verified backup-success metric exists\n' >&2
+  exit 2
+fi
+
+last_success="$(awk '$1 == "sre_backup_last_success_unixtime" { print $2 }' "$metric_file")"
+if [[ ! "$last_success" =~ ^[0-9]+$ ]]; then
+  printf 'backup-success metric is missing or invalid\n' >&2
+  exit 2
+fi
+
+now="${SRE_NOW_EPOCH:-$(date +%s)}"
+if [[ ! "$now" =~ ^[0-9]+$ ]] || [[ ! "$SRE_BACKUP_FRESHNESS_SECONDS" =~ ^[0-9]+$ ]]; then
+  printf 'freshness values must be non-negative integers\n' >&2
+  exit 64
+fi
+
+age="$((now - last_success))"
+if (( age < -300 )); then
+  printf 'backup timestamp is more than five minutes in the future\n' >&2
+  exit 2
+fi
+if (( age > SRE_BACKUP_FRESHNESS_SECONDS )); then
+  printf 'stale backup: age=%ss threshold=%ss\n' "$age" "$SRE_BACKUP_FRESHNESS_SECONDS" >&2
+  exit 2
+fi
+
+printf 'backup fresh: age=%ss threshold=%ss\n' "$age" "$SRE_BACKUP_FRESHNESS_SECONDS"

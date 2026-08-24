@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Serve a bounded directory of Prometheus text-format metrics."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+MAX_FILE_BYTES = 1_048_576
+
+
+class MetricsServer(ThreadingHTTPServer):
+    """HTTP server carrying an immutable metric-directory reference."""
+
+    def __init__(self, address: tuple[str, int], metric_directory: Path):
+        self.metric_directory = metric_directory
+        super().__init__(address, MetricsHandler)
+
+
+class MetricsHandler(BaseHTTPRequestHandler):
+    """Expose only health and Prometheus metric endpoints."""
+
+    server: MetricsServer
+
+    def log_message(self, message: str, *args: object) -> None:
+        print(f"textfile_exporter remote={self.client_address[0]} {message % args}")
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        if self.path == "/healthz":
+            self._respond(HTTPStatus.OK, b"ok\n", "text/plain; charset=utf-8")
+            return
+        if self.path != "/metrics":
+            self._respond(HTTPStatus.NOT_FOUND, b"not found\n", "text/plain; charset=utf-8")
+            return
+
+        try:
+            payload = read_metric_directory(self.server.metric_directory)
+        except (OSError, UnicodeError) as error:
+            self._respond(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                f"metric read failed: {type(error).__name__}\n".encode(),
+                "text/plain; charset=utf-8",
+            )
+            return
+        self._respond(
+            HTTPStatus.OK,
+            payload,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
+
+    def _respond(self, status: HTTPStatus, body: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def read_metric_directory(directory: Path) -> bytes:
+    """Read regular, non-symlink .prom files up to the per-file size limit."""
+
+    chunks: list[str] = []
+    for candidate in sorted(directory.glob("*.prom")):
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        if candidate.stat().st_size > MAX_FILE_BYTES:
+            continue
+        text = candidate.read_text(encoding="utf-8")
+        chunks.append(text.rstrip("\n") + "\n")
+    return "".join(chunks).encode("utf-8")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument("--listen", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9101)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    if not args.directory.is_dir() or args.directory.is_symlink():
+        raise SystemExit("metric directory must be a real directory")
+    if not 0 <= args.port <= 65535:
+        raise SystemExit("port must be between 0 and 65535")
+    server = MetricsServer((args.listen, args.port), args.directory)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

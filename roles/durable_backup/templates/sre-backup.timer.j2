@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the verified backup on a durable schedule
+
+[Timer]
+OnCalendar={{ backup_on_calendar }}
+Persistent=true
+RandomizedDelaySec={{ backup_randomized_delay_seconds | int }}s
+AccuracySec=1m
+Unit=sre-backup.service
+
+[Install]
+WantedBy=timers.target

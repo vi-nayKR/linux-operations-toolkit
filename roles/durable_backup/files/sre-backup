@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+
+config_path="${SRE_BACKUP_CONFIG:-/etc/sre-backup.conf}"
+if [[ ! -f "$config_path" || -L "$config_path" ]]; then
+  printf 'backup config must be a regular, non-symlink file: %s\n' "$config_path" >&2
+  exit 64
+fi
+
+# The file is root-owned and mode 0600 when managed by the role.
+# shellcheck source=/dev/null
+source "$config_path"
+
+: "${SRE_BACKUP_SOURCE:?SRE_BACKUP_SOURCE is required}"
+: "${SRE_BACKUP_DESTINATION:?SRE_BACKUP_DESTINATION is required}"
+: "${SRE_BACKUP_METRIC_DIRECTORY:?SRE_BACKUP_METRIC_DIRECTORY is required}"
+: "${SRE_BACKUP_RETENTION:?SRE_BACKUP_RETENTION is required}"
+
+source_directory="$(realpath -m "$SRE_BACKUP_SOURCE")"
+destination_directory="$(realpath -m "$SRE_BACKUP_DESTINATION")"
+metric_directory="$(realpath -m "$SRE_BACKUP_METRIC_DIRECTORY")"
+
+if [[ "$source_directory" == / || "$destination_directory" == / || "$metric_directory" == / ]]; then
+  printf 'root paths are refused\n' >&2
+  exit 64
+fi
+if [[ ! -d "$source_directory" || -L "$source_directory" ]]; then
+  printf 'backup source is not a real directory: %s\n' "$source_directory" >&2
+  exit 66
+fi
+if [[ ! -d "$destination_directory" || -L "$destination_directory" ]]; then
+  printf 'backup destination is not a real directory: %s\n' "$destination_directory" >&2
+  exit 73
+fi
+if [[ ! -f "$destination_directory/.sre-backup-managed" ]]; then
+  printf 'backup destination lacks the role-managed marker: %s\n' "$destination_directory" >&2
+  exit 73
+fi
+if [[ "$destination_directory/" == "$source_directory/"* ]]; then
+  printf 'backup destination must not be nested inside the source\n' >&2
+  exit 64
+fi
+if [[ ! "$SRE_BACKUP_RETENTION" =~ ^[0-9]+$ ]] || (( SRE_BACKUP_RETENTION < 2 || SRE_BACKUP_RETENTION > 365 )); then
+  printf 'SRE_BACKUP_RETENTION must be between 2 and 365\n' >&2
+  exit 64
+fi
+
+mkdir -p "$metric_directory"
+exec 9>"$destination_directory/.sre-backup.lock"
+if ! flock -n 9; then
+  printf 'another backup run holds the destination lock\n' >&2
+  exit 75
+fi
+
+started_epoch="$(date +%s)"
+archive_tmp=""
+checksum_tmp=""
+run_metric_tmp=""
+completed=0
+
+write_run_metric() {
+  local status="$1"
+  local finished_epoch
+  finished_epoch="$(date +%s)"
+  run_metric_tmp="$(mktemp "$metric_directory/.sre_backup_run.XXXXXX")"
+  {
+    printf '# HELP sre_backup_last_run_unixtime Unix time of the most recent backup attempt.\n'
+    printf '# TYPE sre_backup_last_run_unixtime gauge\n'
+    printf 'sre_backup_last_run_unixtime %s\n' "$finished_epoch"
+    printf '# HELP sre_backup_last_run_success Whether the most recent backup attempt succeeded.\n'
+    printf '# TYPE sre_backup_last_run_success gauge\n'
+    printf 'sre_backup_last_run_success %s\n' "$status"
+  } > "$run_metric_tmp"
+  chmod 0644 "$run_metric_tmp"
+  mv -f "$run_metric_tmp" "$metric_directory/sre_backup_run.prom"
+  run_metric_tmp=""
+}
+
+cleanup() {
+  local exit_status=$?
+  [[ -z "$archive_tmp" ]] || rm -f -- "$archive_tmp"
+  [[ -z "$checksum_tmp" ]] || rm -f -- "$checksum_tmp"
+  [[ -z "$run_metric_tmp" ]] || rm -f -- "$run_metric_tmp"
+  if (( completed == 1 && exit_status == 0 )); then
+    write_run_metric 1
+  else
+    write_run_metric 0 || true
+  fi
+  exit "$exit_status"
+}
+trap cleanup EXIT
+
+node_name="$(hostname | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')"
+timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
+archive_name="sre-backup-${node_name}-${timestamp}.tar.gz"
+archive_path="$destination_directory/$archive_name"
+if [[ -e "$archive_path" ]]; then
+  printf 'refusing to replace an existing archive: %s\n' "$archive_path" >&2
+  exit 73
+fi
+
+archive_tmp="$(mktemp "$destination_directory/.sre-backup.XXXXXX.tar.gz")"
+tar --one-file-system --numeric-owner -C "$source_directory" -czf "$archive_tmp" .
+tar -tzf "$archive_tmp" >/dev/null
+mv -f "$archive_tmp" "$archive_path"
+archive_tmp=""
+
+checksum_tmp="$(mktemp "$destination_directory/.sre-backup-checksum.XXXXXX")"
+(
+  cd "$destination_directory"
+  sha256sum "$archive_name"
+) > "$checksum_tmp"
+chmod 0600 "$checksum_tmp"
+mv -f "$checksum_tmp" "$archive_path.sha256"
+checksum_tmp=""
+(
+  cd "$destination_directory"
+  sha256sum --check --status "$archive_name.sha256"
+)
+
+finished_epoch="$(date +%s)"
+duration_seconds="$((finished_epoch - started_epoch))"
+archive_bytes="$(stat -c '%s' "$archive_path")"
+success_metric_tmp="$(mktemp "$metric_directory/.sre_backup_success.XXXXXX")"
+{
+  printf '# HELP sre_backup_last_success_unixtime Unix time of the most recent verified backup.\n'
+  printf '# TYPE sre_backup_last_success_unixtime gauge\n'
+  printf 'sre_backup_last_success_unixtime %s\n' "$finished_epoch"
+  printf '# HELP sre_backup_last_duration_seconds Duration of the most recent verified backup.\n'
+  printf '# TYPE sre_backup_last_duration_seconds gauge\n'
+  printf 'sre_backup_last_duration_seconds %s\n' "$duration_seconds"
+  printf '# HELP sre_backup_last_archive_bytes Size of the most recent verified archive.\n'
+  printf '# TYPE sre_backup_last_archive_bytes gauge\n'
+  printf 'sre_backup_last_archive_bytes %s\n' "$archive_bytes"
+} > "$success_metric_tmp"
+chmod 0644 "$success_metric_tmp"
+mv -f "$success_metric_tmp" "$metric_directory/sre_backup_success.prom"
+
+mapfile -d '' -t archives < <(
+  find "$destination_directory" -maxdepth 1 -type f -name 'sre-backup-*.tar.gz' \
+    -printf '%T@ %p\0' | sort -z -nr
+)
+if (( ${#archives[@]} > SRE_BACKUP_RETENTION )); then
+  for entry in "${archives[@]:SRE_BACKUP_RETENTION}"; do
+    old_archive="${entry#* }"
+    rm -f -- "$old_archive" "$old_archive.sha256"
+  done
+fi
+
+completed=1
+printf 'verified backup created: %s (%s bytes)\n' "$archive_path" "$archive_bytes"

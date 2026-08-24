@@ -1,0 +1,6 @@
+---
+profile: production
+skip_list:
+  # These role inputs are the repository's small public API; the role names
+  # already scope them in the playbook and inventory documentation.
+  - var-naming[no-role-prefix]

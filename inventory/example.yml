@@ -1,0 +1,14 @@
+---
+# Documentation-only addresses from RFC 5737. Copy this file and replace them.
+all:
+  children:
+    linux_fleet:
+      hosts:
+        debian-node:
+          ansible_host: 192.0.2.10
+        arch-node:
+          ansible_host: 192.0.2.11
+      vars:
+        ansible_user: sre-operator
+        ansible_become: true
+        baseline_users: []

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+umask 077
+output_directory="${1:-}"
+if [[ -z "$output_directory" ]]; then
+  output_directory="$(mktemp -d /var/tmp/sre-diagnostics.XXXXXX)"
+else
+  if [[ -L "$output_directory" ]]; then
+    printf 'diagnostic output must not be a symlink: %s\n' "$output_directory" >&2
+    exit 64
+  fi
+  mkdir -p -- "$output_directory"
+  chmod 0700 "$output_directory"
+  output_directory="$(realpath -m "$output_directory")"
+  if [[ "$output_directory" == / ]]; then
+    printf 'refusing to write diagnostics at filesystem root\n' >&2
+    exit 64
+  fi
+fi
+
+run_capture() {
+  local name="$1"
+  shift
+  {
+    printf '$'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
+    printf '\nexit_status=%s\n' "$?"
+  } > "$output_directory/$name.txt" 2>&1
+}
+
+{
+  printf 'scope=metadata-only\n'
+  printf 'created_utc=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  printf 'excluded=environment,process-command-lines,journals,application-config,credentials,cloud-metadata\n'
+  printf 'review_before_sharing=true\n'
+} > "$output_directory/MANIFEST.txt"
+
+run_capture clock date --iso-8601=seconds
+run_capture kernel uname -a
+run_capture uptime uptime
+run_capture filesystems df -hPT
+run_capture inodes df -iP
+run_capture memory free -h
+run_capture failed-units systemctl --failed --no-pager --plain
+run_capture timers systemctl list-timers --all --no-pager --plain
+run_capture listening-sockets ss -lnt
+
+if [[ -r /proc/pressure/cpu ]]; then
+  {
+    printf '[cpu]\n'
+    cat /proc/pressure/cpu
+    printf '[memory]\n'
+    cat /proc/pressure/memory
+    printf '[io]\n'
+    cat /proc/pressure/io
+  } > "$output_directory/pressure.txt" 2>&1
+fi
+
+if [[ -r /etc/os-release ]]; then
+  awk -F= '$1 ~ /^(NAME|VERSION|VERSION_ID|ID|ID_LIKE)$/ { print }' \
+    /etc/os-release > "$output_directory/os-release.txt"
+fi
+
+printf 'diagnostics written to %s; review every file before sharing\n' "$output_directory"

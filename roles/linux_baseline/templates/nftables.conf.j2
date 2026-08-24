@@ -1,0 +1,26 @@
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet sre_filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lo" accept
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+{% if baseline_allowed_tcp_ports | length > 0 %}
+    tcp dport { {{ baseline_allowed_tcp_ports | map('int') | join(', ') }} } accept
+{% endif %}
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}

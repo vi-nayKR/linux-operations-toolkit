@@ -1,0 +1,23 @@
+[Unit]
+Description=Bounded Prometheus textfile exporter for SRE toolkit metrics
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/local/bin/sre-textfile-exporter --directory {{ baseline_metric_directory }} --listen {{ baseline_exporter_listen_address }} --port {{ baseline_exporter_port }}
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadOnlyPaths={{ baseline_metric_directory }}
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

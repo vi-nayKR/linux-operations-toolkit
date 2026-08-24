@@ -1,0 +1,9 @@
+---
+baseline_users: []
+baseline_passwordless_sudo: false
+baseline_manage_firewall: true
+baseline_allowed_tcp_ports:
+  - 22
+baseline_exporter_listen_address: 127.0.0.1
+baseline_exporter_port: 9101
+baseline_metric_directory: /var/lib/sre-metrics
