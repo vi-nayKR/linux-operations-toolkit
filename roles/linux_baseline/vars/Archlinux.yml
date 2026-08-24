@@ -20,3 +20,4 @@ baseline_ssh_service: sshd
 baseline_privileged_group: wheel
 baseline_time_package: ""
 baseline_time_service: systemd-timesyncd
+baseline_firewall_service_remains_active: false

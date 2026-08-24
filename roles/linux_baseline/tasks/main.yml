@@ -121,14 +121,15 @@
   ansible.builtin.systemd_service:
     name: nftables
     enabled: true
-    state: started
+    state: "{{ 'started' if baseline_firewall_service_remains_active | bool else omit }}"
   when: baseline_manage_firewall | bool
+  notify: Reload nftables
 
 - name: Enable the time synchronization service
   ansible.builtin.systemd_service:
     name: "{{ baseline_time_service }}"
     enabled: true
-    state: started
+    state: "{{ 'started' if baseline_start_time_service | bool else omit }}"
 
 - name: Create the Prometheus textfile directory
   ansible.builtin.file:

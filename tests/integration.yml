@@ -7,6 +7,9 @@
     baseline_manage_firewall: true
     baseline_manage_sshd: true
     baseline_passwordless_sudo: true
+    # systemd-timesyncd deliberately has ConditionVirtualization=!container.
+    # The disposable-node test verifies enablement; real hosts start it by default.
+    baseline_start_time_service: false
     baseline_users:
       - name: sre-operator
         public_keys:

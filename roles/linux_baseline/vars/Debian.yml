@@ -20,3 +20,4 @@ baseline_ssh_service: ssh
 baseline_privileged_group: sudo
 baseline_time_package: systemd-timesyncd
 baseline_time_service: systemd-timesyncd
+baseline_firewall_service_remains_active: true

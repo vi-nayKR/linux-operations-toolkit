@@ -174,8 +174,9 @@ verify_node() {
   local ssh_service="$3"
   {
     printf 'node=%s\n' "$node_name"
-    ssh_node "$port" systemctl is-active "$ssh_service" nftables sre-textfile-exporter.service sre-backup.timer
+    ssh_node "$port" systemctl is-active "$ssh_service" sre-textfile-exporter.service sre-backup.timer
     ssh_node "$port" systemctl is-enabled "$ssh_service" nftables systemd-timesyncd sre-textfile-exporter.service sre-backup.timer
+    ssh_node "$port" nft list table inet sre_filter | grep 'policy drop'
     ssh_operator "$port" sudo -n true
     ssh_node "$port" /usr/sbin/sshd -T | grep -E '^(passwordauthentication no|kbdinteractiveauthentication no|permitrootlogin without-password)$'
     ssh_node "$port" systemctl start sre-backup.service
