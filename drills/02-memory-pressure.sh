@@ -16,8 +16,19 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
-systemd-run --unit="$unit_name" --property=MemoryMax=32M --property=RuntimeMaxSec=20 \
-  /usr/bin/python3 -c 'import time; allocation = bytearray(128 * 1024 * 1024); time.sleep(15)' >/dev/null
+systemd-run --unit="$unit_name" --property=MemoryMax=32M --property=MemorySwapMax=0 \
+  --property=RuntimeMaxSec=20 /usr/bin/python3 -c '
+import time
+
+chunks = []
+for _ in range(128):
+    chunk = bytearray(1024 * 1024)
+    for offset in range(0, len(chunk), 4096):
+        chunk[offset] = 1
+    chunks.append(chunk)
+    time.sleep(0.01)
+time.sleep(15)
+' >/dev/null
 
 result=""
 for _ in $(seq 1 40); do
