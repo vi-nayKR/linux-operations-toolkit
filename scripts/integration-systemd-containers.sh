@@ -171,9 +171,19 @@ ssh_operator() {
 verify_sshd_policy() {
   local port="$1"
   local effective_config
-  effective_config="$(ssh_node "$port" /usr/sbin/sshd -T)"
-  grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) ' \
-    <<< "$effective_config" || true
+  local sshd_path
+  sshd_path="$(ssh_node "$port" find /usr/bin /usr/sbin -maxdepth 1 -type f -name sshd -print -quit)"
+  printf 'sshd_path=%s\n' "$sshd_path"
+  if ! effective_config="$(ssh_node "$port" "$sshd_path" -T 2>&1)"; then
+    printf 'sshd_effective_config_error=%s\n' "$effective_config"
+    return 1
+  fi
+  printf 'sshd_effective_config_bytes=%s\n' "${#effective_config}"
+  if ! grep -Ei '(passwordauthentication|kbdinteractiveauthentication|permitrootlogin)' \
+    <<< "$effective_config"; then
+    printf '%s\n' "$effective_config" | sed -n '1,20p'
+    return 1
+  fi
   grep -Eq '^passwordauthentication no$' <<< "$effective_config"
   grep -Eq '^kbdinteractiveauthentication no$' <<< "$effective_config"
   grep -Eq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
