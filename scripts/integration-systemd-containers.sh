@@ -172,12 +172,11 @@ verify_sshd_policy() {
   local port="$1"
   local effective_config
   effective_config="$(ssh_node "$port" /usr/sbin/sshd -T)"
+  grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) ' \
+    <<< "$effective_config" || true
   grep -Eq '^passwordauthentication no$' <<< "$effective_config"
   grep -Eq '^kbdinteractiveauthentication no$' <<< "$effective_config"
   grep -Eq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
-  grep -E \
-    '^(passwordauthentication no|kbdinteractiveauthentication no|permitrootlogin (prohibit-password|without-password))$' \
-    <<< "$effective_config"
 }
 
 verify_node() {

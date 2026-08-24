@@ -2,14 +2,14 @@
 - name: Reject unsupported operating-system families
   ansible.builtin.assert:
     that:
-      - ansible_os_family in ['Debian', 'Archlinux']
+      - ansible_facts['os_family'] in ['Debian', 'Archlinux']
     fail_msg: >-
       linux_baseline supports Debian and Archlinux families only; detected
-      {{ ansible_os_family }}.
+      {{ ansible_facts['os_family'] }}.
 
 - name: Load distribution-family variables
   ansible.builtin.include_vars:
-    file: "{{ ansible_os_family }}.yml"
+    file: "{{ ansible_facts['os_family'] }}.yml"
 
 - name: Refresh Debian package metadata
   ansible.builtin.apt:
