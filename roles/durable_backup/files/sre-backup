@@ -26,38 +26,18 @@ if [[ "$source_directory" == / || "$destination_directory" == / || "$metric_dire
   printf 'root paths are refused\n' >&2
   exit 64
 fi
-if [[ ! -d "$source_directory" || -L "$source_directory" ]]; then
-  printf 'backup source is not a real directory: %s\n' "$source_directory" >&2
-  exit 66
-fi
-if [[ ! -d "$destination_directory" || -L "$destination_directory" ]]; then
-  printf 'backup destination is not a real directory: %s\n' "$destination_directory" >&2
-  exit 73
-fi
-if [[ ! -f "$destination_directory/.sre-backup-managed" ]]; then
-  printf 'backup destination lacks the role-managed marker: %s\n' "$destination_directory" >&2
-  exit 73
-fi
-if [[ "$destination_directory/" == "$source_directory/"* ]]; then
-  printf 'backup destination must not be nested inside the source\n' >&2
-  exit 64
-fi
-if [[ ! "$SRE_BACKUP_RETENTION" =~ ^[0-9]+$ ]] || (( SRE_BACKUP_RETENTION < 2 || SRE_BACKUP_RETENTION > 365 )); then
-  printf 'SRE_BACKUP_RETENTION must be between 2 and 365\n' >&2
-  exit 64
-fi
 
-mkdir -p "$metric_directory"
-exec 9>"$destination_directory/.sre-backup.lock"
-if ! flock -n 9; then
-  printf 'another backup run holds the destination lock\n' >&2
-  exit 75
+if [[ -L "$SRE_BACKUP_METRIC_DIRECTORY" ]]; then
+  printf 'backup metric directory must not be a symlink: %s\n' "$SRE_BACKUP_METRIC_DIRECTORY" >&2
+  exit 73
 fi
+mkdir -p "$metric_directory"
 
 started_epoch="$(date +%s)"
 archive_tmp=""
 checksum_tmp=""
 run_metric_tmp=""
+success_metric_tmp=""
 completed=0
 
 write_run_metric() {
@@ -83,6 +63,7 @@ cleanup() {
   [[ -z "$archive_tmp" ]] || rm -f -- "$archive_tmp"
   [[ -z "$checksum_tmp" ]] || rm -f -- "$checksum_tmp"
   [[ -z "$run_metric_tmp" ]] || rm -f -- "$run_metric_tmp"
+  [[ -z "$success_metric_tmp" ]] || rm -f -- "$success_metric_tmp"
   if (( completed == 1 && exit_status == 0 )); then
     write_run_metric 1
   else
@@ -91,6 +72,33 @@ cleanup() {
   exit "$exit_status"
 }
 trap cleanup EXIT
+
+if [[ ! -d "$source_directory" || -L "$source_directory" ]]; then
+  printf 'backup source is not a real directory: %s\n' "$source_directory" >&2
+  exit 66
+fi
+if [[ ! -d "$destination_directory" || -L "$destination_directory" ]]; then
+  printf 'backup destination is not a real directory: %s\n' "$destination_directory" >&2
+  exit 73
+fi
+if [[ ! -f "$destination_directory/.sre-backup-managed" ]]; then
+  printf 'backup destination lacks the role-managed marker: %s\n' "$destination_directory" >&2
+  exit 73
+fi
+if [[ "$destination_directory/" == "$source_directory/"* ]]; then
+  printf 'backup destination must not be nested inside the source\n' >&2
+  exit 64
+fi
+if [[ ! "$SRE_BACKUP_RETENTION" =~ ^[0-9]+$ ]] || (( SRE_BACKUP_RETENTION < 2 || SRE_BACKUP_RETENTION > 365 )); then
+  printf 'SRE_BACKUP_RETENTION must be between 2 and 365\n' >&2
+  exit 64
+fi
+
+exec 9>"$destination_directory/.sre-backup.lock"
+if ! flock -n 9; then
+  printf 'another backup run holds the destination lock\n' >&2
+  exit 75
+fi
 
 node_name="$(hostname | tr -c 'A-Za-z0-9._-' '_' | sed 's/_$//')"
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
@@ -137,6 +145,7 @@ success_metric_tmp="$(mktemp "$metric_directory/.sre_backup_success.XXXXXX")"
 } > "$success_metric_tmp"
 chmod 0644 "$success_metric_tmp"
 mv -f "$success_metric_tmp" "$metric_directory/sre_backup_success.prom"
+success_metric_tmp=""
 
 mapfile -d '' -t archives < <(
   find "$destination_directory" -maxdepth 1 -type f -name 'sre-backup-*.tar.gz' \
