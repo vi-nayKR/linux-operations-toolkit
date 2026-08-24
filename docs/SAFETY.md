@@ -13,6 +13,8 @@
 
 The baseline keeps root public-key SSH available with `PermitRootLogin prohibit-password` to avoid an automatic lockout during initial adoption. A stricter environment should prove the operator path and then override this with a separately reviewed policy.
 
+`baseline_manage_sshd` and `baseline_manage_firewall` both default to `false`. CI turns them on against disposable nodes. A real inventory must opt in after the current SSH daemon includes and firewall ownership model are understood; the nftables template intentionally owns and flushes the ruleset when enabled.
+
 ## Drill guardrails
 
 Do not run `scripts/run-drills.sh` on production, on the two Medha workload nodes, or on the proposed Lenovo control node while it is providing monitoring or automation.

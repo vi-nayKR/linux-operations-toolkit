@@ -17,6 +17,7 @@
 - database-lock handling for PostgreSQL/MySQL; the drill uses SQLite to reproduce the symptom safely;
 - DNS resolver outage or public PKI incident; the drill uses a reserved name and a local self-signed certificate;
 - memory-pressure behavior outside the tested cgroup v2 environment;
+- package bytes beyond the base image are fetched from live Debian security/update and Arch rolling repositories, so a later run can exercise newer packages even though base manifests and tool versions are pinned;
 - unattended upgrades, vulnerability remediation, EDR, auditd, SELinux/AppArmor policy, or centralized identity;
 - multi-host orchestration under partial failure or `serial` rollout behavior.
 

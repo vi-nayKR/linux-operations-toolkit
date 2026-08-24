@@ -4,6 +4,8 @@
   become: true
   gather_facts: true
   vars:
+    baseline_manage_firewall: true
+    baseline_manage_sshd: true
     baseline_passwordless_sudo: true
     baseline_users:
       - name: sre-operator

@@ -12,6 +12,8 @@ evidence_directory="$repo_root/evidence/runtime"
 known_hosts="$runtime_directory/known_hosts"
 inventory="$runtime_directory/inventory.yml"
 private_key="$runtime_directory/id_ed25519"
+bootstrap_user=ansible-bootstrap
+bootstrap_sudoers="$runtime_directory/00-integration-bootstrap"
 
 cleanup() {
   for container in "$debian_container" "$arch_container"; do
@@ -41,6 +43,7 @@ done
 mkdir -p "$evidence_directory"
 : > "$known_hosts"
 ssh-keygen -q -t ed25519 -N '' -f "$private_key"
+printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$bootstrap_user" > "$bootstrap_sudoers"
 export SRE_OPERATOR_PUBLIC_KEY
 SRE_OPERATOR_PUBLIC_KEY="$(<"$private_key.pub")"
 
@@ -90,9 +93,15 @@ bootstrap_ssh() {
   local container="$1"
   local service="$2"
   docker exec "$container" ssh-keygen -A
-  docker exec "$container" install -d -m 0700 /root/.ssh
-  docker cp "$private_key.pub" "$container:/root/.ssh/authorized_keys" >/dev/null
-  docker exec "$container" chmod 0600 /root/.ssh/authorized_keys
+  docker exec "$container" useradd --create-home --shell /bin/bash "$bootstrap_user"
+  docker exec "$container" install -d -m 0700 -o "$bootstrap_user" -g "$bootstrap_user" "/home/$bootstrap_user/.ssh"
+  docker cp "$private_key.pub" "$container:/home/$bootstrap_user/.ssh/authorized_keys" >/dev/null
+  docker exec "$container" chown "$bootstrap_user:$bootstrap_user" "/home/$bootstrap_user/.ssh/authorized_keys"
+  docker exec "$container" chmod 0600 "/home/$bootstrap_user/.ssh/authorized_keys"
+  docker cp "$bootstrap_sudoers" "$container:/etc/sudoers.d/00-integration-bootstrap" >/dev/null
+  docker exec "$container" chown root:root /etc/sudoers.d/00-integration-bootstrap
+  docker exec "$container" chmod 0440 /etc/sudoers.d/00-integration-bootstrap
+  docker exec "$container" visudo --check --file=/etc/sudoers.d/00-integration-bootstrap
   docker exec "$container" systemctl start "$service"
 }
 
@@ -110,7 +119,7 @@ ssh-keyscan -H -p "$arch_port" 127.0.0.1 2>/dev/null | tee -a "$known_hosts" >/d
   printf '%s\n' '---' 'all:' '  children:' '    linux_fleet:' '      hosts:'
   printf '        debian-node:\n          ansible_host: 127.0.0.1\n          ansible_port: %s\n' "$debian_port"
   printf '        arch-node:\n          ansible_host: 127.0.0.1\n          ansible_port: %s\n' "$arch_port"
-  printf '%s\n' '      vars:' '        ansible_user: root' '        ansible_become: false'
+  printf '%s\n' '      vars:' "        ansible_user: $bootstrap_user" '        ansible_become: true'
   printf '        ansible_ssh_private_key_file: %s\n' "$private_key"
   printf "        ansible_ssh_common_args: '-o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes'\n" "$known_hosts"
 } > "$inventory"
@@ -132,7 +141,7 @@ ssh_node() {
   ssh -i "$private_key" -p "$port" \
     -o BatchMode=yes -o IdentitiesOnly=yes \
     -o UserKnownHostsFile="$known_hosts" -o StrictHostKeyChecking=yes \
-    root@127.0.0.1 "$@"
+    "$bootstrap_user"@127.0.0.1 sudo -- "$@"
 }
 
 ssh_operator() {
@@ -156,7 +165,11 @@ verify_node() {
     ssh_node "$port" /usr/sbin/sshd -T | grep -E '^(passwordauthentication no|kbdinteractiveauthentication no|permitrootlogin without-password)$'
     ssh_node "$port" systemctl start sre-backup.service
     ssh_node "$port" /usr/local/sbin/sre-backup-freshness
-    ssh_node "$port" "cd /var/backups/sre-toolkit && sha256sum --check --status sre-backup-*.tar.gz.sha256"
+    ssh -i "$private_key" -p "$port" \
+      -o BatchMode=yes -o IdentitiesOnly=yes \
+      -o UserKnownHostsFile="$known_hosts" -o StrictHostKeyChecking=yes \
+      "$bootstrap_user"@127.0.0.1 \
+      "sudo /bin/bash -c 'cd /var/backups/sre-toolkit && sha256sum --check --status sre-backup-*.tar.gz.sha256'"
     ssh_node "$port" curl --fail --silent --show-error http://127.0.0.1:9101/metrics | grep '^sre_backup_last_success_unixtime '
     ssh_node "$port" systemctl cat sre-backup.timer | grep '^Persistent=true$'
   } | tee "$evidence_directory/verify-${node_name}.log"

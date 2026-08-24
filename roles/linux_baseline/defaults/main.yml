@@ -1,7 +1,8 @@
 ---
 baseline_users: []
 baseline_passwordless_sudo: false
-baseline_manage_firewall: true
+baseline_manage_sshd: false
+baseline_manage_firewall: false
 baseline_allowed_tcp_ports:
   - 22
 baseline_exporter_listen_address: 127.0.0.1

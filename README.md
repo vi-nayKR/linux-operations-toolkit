@@ -45,7 +45,7 @@ ansible-playbook --inventory inventory/your-fleet.yml playbooks/site.yml --check
 ansible-playbook --inventory inventory/your-fleet.yml playbooks/site.yml
 ```
 
-Review nftables access, SSH behavior, backup paths, and sudo policy before removing `--check`. The default exporter binds only to `127.0.0.1:9101`; use an authenticated collector path or SSH tunnel instead of exposing it broadly.
+SSH hardening and nftables replacement are deliberately opt-in. Set `baseline_manage_sshd: true` and `baseline_manage_firewall: true` only after reviewing access from a canary host and preserving a console/rollback path. Review backup paths and sudo policy before removing `--check`. The default exporter binds only to `127.0.0.1:9101`; use an authenticated collector path or SSH tunnel instead of exposing it broadly.
 
 ## Validation
 
