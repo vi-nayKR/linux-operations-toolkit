@@ -168,6 +168,18 @@ ssh_operator() {
     sre-operator@127.0.0.1 "$@"
 }
 
+verify_sshd_policy() {
+  local port="$1"
+  local effective_config
+  effective_config="$(ssh_node "$port" /usr/sbin/sshd -T)"
+  grep -Eq '^passwordauthentication no$' <<< "$effective_config"
+  grep -Eq '^kbdinteractiveauthentication no$' <<< "$effective_config"
+  grep -Eq '^permitrootlogin (prohibit-password|without-password)$' <<< "$effective_config"
+  grep -E \
+    '^(passwordauthentication no|kbdinteractiveauthentication no|permitrootlogin (prohibit-password|without-password))$' \
+    <<< "$effective_config"
+}
+
 verify_node() {
   local node_name="$1"
   local port="$2"
@@ -178,7 +190,7 @@ verify_node() {
     ssh_node "$port" systemctl is-enabled "$ssh_service" nftables systemd-timesyncd sre-textfile-exporter.service sre-backup.timer
     ssh_node "$port" nft list table inet sre_filter | grep 'policy drop'
     ssh_operator "$port" sudo -n true
-    ssh_node "$port" /usr/sbin/sshd -T | grep -E '^(passwordauthentication no|kbdinteractiveauthentication no|permitrootlogin without-password)$'
+    verify_sshd_policy "$port"
     ssh_node "$port" systemctl start sre-backup.service
     ssh_node "$port" /usr/local/sbin/sre-backup-freshness
     ssh -i "$private_key" -p "$port" \
